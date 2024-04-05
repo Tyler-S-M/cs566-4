@@ -1,0 +1,4 @@
+Average running time for Warp Reduction 0.00409696 ms
+Average running time for Block Reduction 0.00867648 ms
+Average running time for Block Reduction Branchless 0.00659136 ms
+Average running time for Block Reduction Sequential Addresses 0.00643776 ms

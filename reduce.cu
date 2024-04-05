@@ -1,9 +1,11 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <stdio.h>
+#include <iostream>
 
 #define BLOCKS 1
 #define THREADS 1024
+#define ITER_TIMES 100
 
 __device__ int vector[THREADS * BLOCKS];
 __device__ int last_run;
@@ -17,7 +19,11 @@ __global__ void fill(){
 
 __global__ void read_last_run(float time){
 
-    printf("Last Run Result: %d and took: %f milliseconds\n", last_run, time);
+    //debugging measure
+    if (ITER_TIMES == 1)
+        printf("Last Run Result: %d and took: %f milliseconds\n", last_run, time);
+    
+    //reset value
     last_run = -1;
 
 }
@@ -25,6 +31,7 @@ __global__ void read_last_run(float time){
 __global__ void parallel_redution_warp(){
 
     __shared__ int sum;
+    sum = 0;
 
     //get our idex (assume 1d grids only)
     int idx = threadIdx.x + (blockIdx.x * blockDim.x);
@@ -66,7 +73,6 @@ __global__ void parallel_redution_block(){
     __syncthreads();
 
     //do reduction as shown in slides
-    __syncwarp();
     for (int i = 1; i < blockDim.x; i *= 2){
 
         //more volta-needed sync
@@ -78,9 +84,6 @@ __global__ void parallel_redution_block(){
         //more volta-needed sync
         __syncthreads();
     }
-
-    //sync
-    __syncthreads();
 
     //write
     if (idx == 0)
@@ -119,9 +122,6 @@ __global__ void parallel_redution_block_branchless(){
         __syncthreads();
     }
 
-    //sync
-    __syncthreads();
-
     //write
     if (idx == 0)
         last_run = shared_vector[0];
@@ -158,9 +158,6 @@ __global__ void parallel_redution_block_interleaved(){
         __syncthreads();
     }
 
-    //sync
-    __syncthreads();
-
     //write
     if (idx == 0)
         last_run = shared_vector[0];
@@ -177,69 +174,101 @@ int main(){
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     float milliseconds = 0;
+    float times[4][ITER_TIMES] = {0.0};
+    std::string parallel_mode[] = {"Warp Reduction", "Block Reduction", "Block Reduction Branchless", "Block Reduction Sequential Addresses"};
 
     // Warp Reduction
     /*******************************************************************/
-    //fill vector with random values
-    fill<<<1,1>>>();
-    cudaDeviceSynchronize();
+    for (int i = 0; i < ITER_TIMES; i++){
 
-    //now reduce with warp
-    cudaEventRecord(start);
-    parallel_redution_warp<<<1, 1024>>>();
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    read_last_run<<<1,1>>>(milliseconds);
-    cudaDeviceSynchronize();
+        //fill vector with random values
+        fill<<<1,1>>>();
+        cudaDeviceSynchronize();
+
+        //now reduce with warp
+        cudaEventRecord(start);
+        parallel_redution_warp<<<1, 1024>>>();
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&milliseconds, start, stop);
+        read_last_run<<<1,1>>>(milliseconds);
+        times[0][i] = milliseconds;
+        cudaDeviceSynchronize();
+    }
     /*******************************************************************/
 
     // Block Reduction
     /*******************************************************************/
-    //fill vector with random values
-    fill<<<1,1>>>();
-    cudaDeviceSynchronize();
+    for (int i = 0; i < ITER_TIMES; i++){
 
-    //now reduce with block
-    cudaEventRecord(start);
-    parallel_redution_block<<<1, 1024>>>();
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    read_last_run<<<1,1>>>(milliseconds);
-    cudaDeviceSynchronize();
+        //fill vector with random values
+        fill<<<1,1>>>();
+        cudaDeviceSynchronize();
+
+        //now reduce with warp
+        cudaEventRecord(start);
+        parallel_redution_block<<<1, 1024>>>();
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&milliseconds, start, stop);
+        read_last_run<<<1,1>>>(milliseconds);
+        times[1][i] = milliseconds;
+        cudaDeviceSynchronize();
+    }
     /*******************************************************************/
 
     // Block Reduction Branchless
     /*******************************************************************/    
-    //fill vector with random values
-    fill<<<1,1>>>();
-    cudaDeviceSynchronize();
+    for (int i = 0; i < ITER_TIMES; i++){
 
-    //now reduce with block
-    cudaEventRecord(start);
-    parallel_redution_block_branchless<<<1, 1024>>>();
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    read_last_run<<<1,1>>>(milliseconds);
-    cudaDeviceSynchronize();
+        //fill vector with random values
+        fill<<<1,1>>>();
+        cudaDeviceSynchronize();
+
+        //now reduce with warp
+        cudaEventRecord(start);
+        parallel_redution_block_branchless<<<1, 1024>>>();
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&milliseconds, start, stop);
+        read_last_run<<<1,1>>>(milliseconds);
+        times[2][i] = milliseconds;
+        cudaDeviceSynchronize();
+    }
     /*******************************************************************/
 
     // Block Reduction Interleaved
     /*******************************************************************/    
-    //fill vector with random values
-    fill<<<1,1>>>();
-    cudaDeviceSynchronize();
+    for (int i = 0; i < ITER_TIMES; i++){
 
-    //now reduce with block
-    cudaEventRecord(start);
-    parallel_redution_block_interleaved<<<1, 1024>>>();
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    read_last_run<<<1,1>>>(milliseconds);
-    cudaDeviceSynchronize();
+        //fill vector with random values
+        fill<<<1,1>>>();
+        cudaDeviceSynchronize();
+
+        //now reduce with warp
+        cudaEventRecord(start);
+        parallel_redution_block_interleaved<<<1, 1024>>>();
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&milliseconds, start, stop);
+        read_last_run<<<1,1>>>(milliseconds);
+        times[3][i] = milliseconds;
+        cudaDeviceSynchronize();
+    }
     /*******************************************************************/
 
+    //read out results
+    if (ITER_TIMES != 0){
+        for (int i = 0; i < 4; i++){
+
+            float total_times = 0.0;
+
+            for (int j = 0; j < ITER_TIMES; j++){
+                total_times += times[i][j];
+            } 
+
+            total_times /= ITER_TIMES;
+            std::cout << "Average running time for " << parallel_mode[i] << " " << total_times << " ms\n";
+        } 
+    }
 }
